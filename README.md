@@ -18,6 +18,8 @@ import {
   setSkillType,
   setTimeline,
 } from "@/redux/slice/Sidebar";
+import Swal from "sweetalert2";
+import { setLocation } from "@/redux/slice/locationSlice";
 
 export type Filters = {
   industry: string[];
@@ -59,7 +61,11 @@ export function Sidebar({
   const [durationMinValue, setDurationMinValue] = useState(1);
   const [durationMaxValue, setDurationMaxValue] = useState(90);
   const [locMinLoc, setMinLoc] = useState(10);
-  const [locMaxLoc, setMaxLoc] = useState(5000);
+  const [locMaxLoc, setMaxLoc] = useState(10000);
+  const [currentLocation, setCurrentLocation] = useState<{
+    lat: number;
+    long: number;
+  } | null>(null);
 
   const handleBudgetMinChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -123,14 +129,116 @@ export function Sidebar({
     [dispatch, durationMinValue, setFilters]
   );
 
+  const [permissionStatus, setPermissionStatus] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (typeof navigator !== "undefined" && navigator.permissions) {
+      navigator.permissions.query({ name: "geolocation" }).then((result) => {
+        setPermissionStatus(result.state);
+
+        // Listen for permission changes
+        result.onchange = () => {
+          setPermissionStatus(result.state);
+        };
+      });
+    } else {
+      setPermissionStatus("Permissions API not supported");
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!navigator || !navigator.geolocation) {
+      Swal.fire(
+        "Opps!",
+        "Geolocation is not supported by this browser.",
+        "error"
+      );
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        console.log("Location allowed:", position.coords);
+        setCurrentLocation({
+          long: position?.coords?.longitude,
+          lat: position?.coords?.latitude,
+        });
+        dispatch(
+          setLocation({
+            max: undefined,
+            min: undefined,
+            lat: position.coords.latitude,
+            long: position.coords.longitude,
+          })
+        );
+      },
+      (err) => {
+        Swal.fire("Opps!", err.message, "error");
+      }
+    );
+  }, [dispatch]);
+
+  console.log(permissionStatus, "hello");
+
   const getDurationProgressStyle = useCallback(() => {
     const left = ((durationMinValue - minDay) / (maxDay - minDay)) * 100;
     const right = 100 - ((durationMaxValue - minDay) / (maxDay - minDay)) * 100;
+
     return {
       left: `${left}%`,
       right: `${right}%`,
     };
   }, [durationMinValue, durationMaxValue]);
+  const handleLocMinChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const value = Math.min(
+        Number(event.target.value),
+        durationMaxValue - minGap2
+      );
+      setMinLoc(value);
+      setFilters((prev) => ({ ...prev, minDay: value }));
+      dispatch(setMinRange({ min: value }));
+    },
+    [dispatch, durationMaxValue, setFilters]
+  );
+
+  const handleLocMaxChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const value = Math.max(
+        Number(event.target.value),
+        durationMinValue + minGap2
+      );
+      setMaxLoc(value);
+      setFilters((prev) => ({ ...prev, maxDay: value }));
+      dispatch(
+        setLocation({
+          max: value,
+          min: locMinLoc,
+          lat: currentLocation?.lat,
+          long: currentLocation?.long,
+        })
+      );
+    },
+    [
+      currentLocation?.lat,
+      currentLocation?.long,
+      dispatch,
+      durationMinValue,
+      locMinLoc,
+      setFilters,
+    ]
+  );
+
+  console.log(currentLocation);
+
+  const getLocationProgressStyle = useCallback(() => {
+    const left = ((locMinLoc - minLoc) / (maxLoc - minLoc)) * 100;
+    const right = 100 - ((locMaxLoc - minLoc) / (maxLoc - minLoc)) * 100;
+    return {
+      left: `${left}%`,
+      right: `${right}%`,
+    };
+  }, [locMinLoc, locMaxLoc]);
 
   const pathName = usePathname();
 
@@ -392,14 +500,14 @@ export function Sidebar({
                 <div className="absolute w-full h-full bg-gray-200 rounded-full" />
                 <div
                   className="absolute h-full bg-primary rounded-full"
-                  style={getBudgetProgressStyle()}
+                  style={getLocationProgressStyle()}
                 />
                 <input
                   type="range"
                   min={minLoc}
                   max={maxLoc}
                   value={locMinLoc}
-                  onChange={handleBudgetMinChange}
+                  onChange={handleLocMinChange}
                   className="absolute w-full h-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-md"
                 />
                 <input
@@ -407,7 +515,7 @@ export function Sidebar({
                   min={minLoc}
                   max={maxLoc}
                   value={locMaxLoc}
-                  onChange={handleBudgetMaxChange}
+                  onChange={handleLocMaxChange}
                   className="absolute w-full h-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-md"
                 />
               </div>
@@ -443,4 +551,5 @@ export function MobileSidebar({
     </Sheet>
   );
 }
+
 ```
